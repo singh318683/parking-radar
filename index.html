@@ -101,17 +101,22 @@
 
   @media (max-width: 700px) {
     #main { flex-direction: column; position: relative; overflow: hidden; }
-    #map { width: 100%; flex: 1; min-height: 0; }
+    #map { width: 100%; flex: 1; min-height: 0; transition: flex .3s ease; }
     #sidebar {
       position: absolute; bottom: 0; left: 0; right: 0;
       width: 100%; height: 220px; max-height: 220px;
       border-left: none; border-top: none;
       border-radius: 14px 14px 0 0;
       box-shadow: 0 -4px 24px rgba(0,0,0,.15);
-      transition: height .28s cubic-bezier(.4,0,.2,1);
+      transition: height .28s cubic-bezier(.4,0,.2,1), border-radius .28s;
       z-index: 999; overflow: hidden;
     }
     #drag-handle-wrap { display: flex; }
+    #main.list-mode #map { display: none; }
+    #main.list-mode #sidebar {
+      position: static; height: 100%; max-height: 100%;
+      border-radius: 0; box-shadow: none;
+    }
   }
 </style>
 </head>
@@ -123,6 +128,7 @@
     <div id="topbar-row1">
       <div id="logo">P</div>
       <div id="app-title">Parking Radar</div>
+      <button id="view-toggle-btn" onclick="toggleView()" style="display:none;padding:7px 11px;border-radius:8px;border:1.5px solid #334155;background:#1e293b;color:#94a3b8;font-size:12px;cursor:pointer;white-space:nowrap">&#9776; List</button>
       <button id="scan-btn" onclick="startScan()">&#9906; Scan</button>
     </div>
     <div id="topbar-row2">
@@ -552,6 +558,7 @@ async function loadSpots(lat,lng){
     })).filter(s=>s.lat&&s.lng&&s.dist<=1000);
     applyFilter();
     updateSavedCount();
+    document.getElementById('view-toggle-btn').style.display='block';
     const f=allSpots.filter(s=>s.cat==='free').length, p=allSpots.filter(s=>s.cat==='public').length, pd=allSpots.filter(s=>s.cat==='paid').length;
     setStatus(`${allSpots.length} parking areas found \u2014 ${f} free \u00b7 ${p} public \u00b7 ${pd} paid \u2014 sorted cheapest first`,'ok');
   } catch(e){
@@ -559,6 +566,33 @@ async function loadSpots(lat,lng){
   }
 }
 
+
+
+// ── VIEW TOGGLE (map <-> list) ────────────────────────────────────────────
+let listMode = false;
+function toggleView(){
+  listMode = !listMode;
+  const main = document.getElementById('main');
+  const btn  = document.getElementById('view-toggle-btn');
+  if(listMode){
+    main.classList.add('list-mode');
+    btn.innerHTML = '&#9654; Map';
+    btn.style.color = '#60a5fa';
+    btn.style.borderColor = '#3b82f6';
+    // expand sidebar fully
+    const sb = document.getElementById('sidebar');
+    if(sb){ sb.style.height='100%'; sb.style.maxHeight='100%'; }
+  } else {
+    main.classList.remove('list-mode');
+    btn.innerHTML = '&#9776; List';
+    btn.style.color = '#94a3b8';
+    btn.style.borderColor = '#334155';
+    // reset sidebar to peek
+    const sb = document.getElementById('sidebar');
+    if(sb){ sb.style.height='220px'; sb.style.maxHeight='220px'; }
+    if(map) setTimeout(()=>map.invalidateSize(),320);
+  }
+}
 
 // ── BOTTOM SHEET (mobile) ─────────────────────────────────────────────────
 (function(){
