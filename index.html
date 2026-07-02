@@ -225,6 +225,12 @@ function getHours(tags){
 function getCapacity(tags){
   return tags.capacity ? tags.capacity+' spaces' : 'Unknown capacity';
 }
+function driveTime(m){
+  if(m < 200)  return 'Under 1 min drive';
+  if(m < 500)  return '1-2 min drive';
+  if(m < 800)  return '2-3 min drive';
+  return '3-5 min drive';
+}
 
 function isSaved(spot){
   return savedSpots.some(s => Math.abs(s.lat-spot.lat)<0.00001 && Math.abs(s.lng-spot.lng)<0.00001);
@@ -304,7 +310,7 @@ function buildPopup(spot){
     <div class="popup-row">&#127963; ${getParkingType(spot.tags)}</div>
     <div class="popup-row">&#128101; ${getCapacity(spot.tags)}</div>
     <div class="popup-row">&#128336; ${getHours(spot.tags)}</div>
-    <div class="popup-row">&#128205; ${fmtDist(spot.dist)} away</div>
+    <div class="popup-row">&#128205; ${fmtDist(spot.dist)} away &nbsp;|&nbsp; &#128663; ${driveTime(spot.dist)}</div>
     <a class="popup-dir" href="${dirUrl}" target="_blank">&#9654; Get Directions</a>`;
 }
 
@@ -351,6 +357,7 @@ function applyFilter(){
         <span>&#128101; ${getCapacity(spot.tags)}</span>
         <span>&#128336; ${getHours(spot.tags)}</span>
         <span>&#128205; ${fmtDist(spot.dist)} away</span>
+        <span>&#128663; ${driveTime(spot.dist)}</span>
       </div>
       <div class="scard-actions">
         <button class="btn-dir" onclick="getDirections(${spot.lat},${spot.lng},event)">&#9654; Directions</button>
