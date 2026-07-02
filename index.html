@@ -96,10 +96,22 @@
   @keyframes spin { from{transform:rotate(0)} to{transform:rotate(360deg)} }
   .spin { display: inline-block; animation: spin 1s linear infinite; }
 
-  @media (max-width: 600px) {
-    #sidebar { width: 100%; max-height: 240px; border-left: none; border-top: 1px solid var(--gray-border); }
-    #main { flex-direction: column; }
-    #map { flex: 1; min-height: 0; }
+  #drag-handle-wrap { display: none; justify-content: center; align-items: center; padding: 8px 0 4px; cursor: grab; touch-action: none; background: white; border-radius: 14px 14px 0 0; flex-shrink: 0; }
+  #drag-handle { width: 36px; height: 4px; border-radius: 2px; background: var(--gray-border); }
+
+  @media (max-width: 700px) {
+    #main { flex-direction: column; position: relative; overflow: hidden; }
+    #map { width: 100%; flex: 1; min-height: 0; }
+    #sidebar {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      width: 100%; height: 220px; max-height: 220px;
+      border-left: none; border-top: none;
+      border-radius: 14px 14px 0 0;
+      box-shadow: 0 -4px 24px rgba(0,0,0,.15);
+      transition: height .28s cubic-bezier(.4,0,.2,1);
+      z-index: 999; overflow: hidden;
+    }
+    #drag-handle-wrap { display: flex; }
   }
 </style>
 </head>
@@ -143,6 +155,7 @@
 
     <!-- SIDEBAR -->
     <div id="sidebar">
+      <div id="drag-handle-wrap" id="dragHandle"><div id="drag-handle"></div></div>
       <div id="sb-tabs">
         <div class="sb-tab active" onclick="showTab('spots',this)">&#128205; Spots <span id="scount"></span></div>
         <div class="sb-tab" onclick="showTab('saved',this)">&#11088; Saved <span id="saved-count"></span></div>
@@ -545,6 +558,60 @@ async function loadSpots(lat,lng){
     setStatus('Could not load parking data. Check your connection.','error');
   }
 }
+
+
+// ── BOTTOM SHEET (mobile) ─────────────────────────────────────────────────
+(function(){
+  const PEEK = 220, HALF = Math.round(window.innerHeight * 0.5), FULL = Math.round(window.innerHeight * 0.88);
+  let currentH = PEEK, startY = 0, startH = 0, dragging = false;
+
+  function isMobile(){ return window.innerWidth <= 700; }
+  function setHeight(h, animate){
+    const sb = document.getElementById('sidebar');
+    if(!sb) return;
+    sb.style.transition = animate ? 'height .28s cubic-bezier(.4,0,.2,1)' : 'none';
+    sb.style.height = h + 'px';
+    sb.style.maxHeight = h + 'px';
+    currentH = h;
+  }
+  function snapTo(y){
+    const distPeek = Math.abs(y - PEEK), distHalf = Math.abs(y - HALF), distFull = Math.abs(y - FULL);
+    const min = Math.min(distPeek, distHalf, distFull);
+    setHeight(min === distPeek ? PEEK : min === distHalf ? HALF : FULL, true);
+  }
+
+  function onDown(e){
+    if(!isMobile()) return;
+    dragging = true;
+    startY = e.touches ? e.touches[0].clientY : e.clientY;
+    startH = currentH;
+    document.getElementById('sidebar').style.transition = 'none';
+  }
+  function onMove(e){
+    if(!dragging || !isMobile()) return;
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    const delta = startY - y;
+    const newH = Math.max(80, Math.min(FULL, startH + delta));
+    setHeight(newH, false);
+    if(e.cancelable) e.preventDefault();
+  }
+  function onUp(e){
+    if(!dragging) return;
+    dragging = false;
+    snapTo(currentH);
+  }
+
+  window.addEventListener('DOMContentLoaded', ()=>{
+    const handle = document.getElementById('drag-handle-wrap');
+    if(!handle) return;
+    handle.addEventListener('touchstart', onDown, {passive:true});
+    handle.addEventListener('mousedown',  onDown);
+    window.addEventListener('touchmove',  onMove, {passive:false});
+    window.addEventListener('mousemove',  onMove);
+    window.addEventListener('touchend',   onUp);
+    window.addEventListener('mouseup',    onUp);
+  });
+})();
 
 // ── INIT ──────────────────────────────────────────────────────────────────
 updateSavedCount();
