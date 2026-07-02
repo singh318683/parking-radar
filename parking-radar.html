@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>Parking Radar</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  :root {
+    --navy: #0F172A; --blue: #2563EB; --blue-light: #EFF6FF; --blue-mid: #BFDBFE;
+    --green: #16A34A; --green-light: #F0FDF4; --amber: #D97706; --amber-light: #FFFBEB;
+    --red: #DC2626; --gray-text: #475569; --gray-light: #F1F5F9; --gray-border: #CBD5E1;
+    --white: #fff; --surface: #F8FAFC;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--surface); }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+
+  /* ── TOPBAR ── */
+  #topbar { background: var(--navy); padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+  #topbar-row1 { display: flex; align-items: center; gap: 10px; }
+  #logo { width: 34px; height: 34px; border-radius: 8px; background: var(--blue); display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 800; color: white; flex-shrink: 0; }
+  #app-title { font-size: 17px; font-weight: 700; color: white; flex: 1; }
+  #scan-btn { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; border: none; background: var(--blue); color: white; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background .2s; }
+  #scan-btn:hover { background: #1d4ed8; }
+  #scan-btn:disabled { opacity: .5; cursor: not-allowed; }
+  #topbar-row2 { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  #addr-wrap { flex: 1; min-width: 160px; position: relative; }
+  #addr-input { width: 100%; padding: 7px 32px 7px 10px; border-radius: 8px; border: 1.5px solid #334155; background: #1e293b; color: white; font-size: 13px; outline: none; }
+  #addr-input::placeholder { color: #64748b; }
+  #addr-input:focus { border-color: var(--blue); }
+  #addr-clear { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #64748b; cursor: pointer; font-size: 16px; display: none; }
+  #filter-sel { padding: 7px 8px; border-radius: 8px; border: 1.5px solid #334155; background: #1e293b; color: white; font-size: 12px; cursor: pointer; }
+  .dist-chips { display: flex; gap: 4px; }
+  .chip { padding: 6px 11px; border-radius: 20px; border: 1.5px solid #334155; background: #1e293b; color: #94a3b8; font-size: 12px; cursor: pointer; font-weight: 500; transition: all .15s; }
+  .chip.active { background: var(--blue); border-color: var(--blue); color: white; }
+
+  /* ── STATUS BAR ── */
+  #status-bar { padding: 7px 14px; font-size: 12px; color: var(--gray-text); background: white; border-bottom: 1px solid var(--gray-border); display: flex; align-items: center; gap: 7px; min-height: 34px; flex-shrink: 0; }
+  #sdot { width: 7px; height: 7px; border-radius: 50%; background: var(--gray-border); flex-shrink: 0; }
+  #sdot.g { background: var(--green); }
+  #sdot.a { background: var(--amber); animation: blink 1s infinite; }
+  #sdot.r { background: var(--red); }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* ── MAIN LAYOUT ── */
+  #main { display: flex; flex: 1; overflow: hidden; }
+  #map { flex: 1; z-index: 1; }
+
+  /* ── SIDEBAR ── */
+  #sidebar { width: 260px; display: flex; flex-direction: column; background: white; border-left: 1px solid var(--gray-border); overflow: hidden; flex-shrink: 0; }
+  #sb-tabs { display: flex; border-bottom: 1px solid var(--gray-border); }
+  .sb-tab { flex: 1; padding: 9px 6px; font-size: 12px; font-weight: 600; color: var(--gray-text); text-align: center; cursor: pointer; border-bottom: 2px solid transparent; }
+  .sb-tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+  #legend { display: flex; gap: 10px; padding: 7px 12px; background: var(--gray-light); border-bottom: 1px solid var(--gray-border); flex-wrap: wrap; }
+  .leg { display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--gray-text); }
+  .leg-dot { width: 9px; height: 9px; border-radius: 50%; }
+  #spot-list, #saved-list { flex: 1; overflow-y: auto; padding: 8px; }
+  #empty-state, #empty-saved { padding: 30px 16px; text-align: center; color: var(--gray-text); font-size: 12px; line-height: 1.8; }
+  #empty-state .e-icon, #empty-saved .e-icon { font-size: 32px; display: block; margin-bottom: 8px; }
+
+  /* ── SPOT CARDS ── */
+  .scard { padding: 10px 11px; border-radius: 10px; border: 1.5px solid var(--gray-border); background: white; margin-bottom: 7px; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+  .scard:hover { border-color: var(--blue); box-shadow: 0 2px 8px rgba(37,99,235,.1); }
+  .scard.active { border-color: var(--blue); background: var(--blue-light); }
+  .scard-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; margin-bottom: 5px; }
+  .scard-num { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: white; flex-shrink: 0; margin-top: 1px; }
+  .scard-name { font-size: 12px; font-weight: 600; color: var(--navy); line-height: 1.4; flex: 1; }
+  #save-btn-tpl { background: none; border: none; font-size: 16px; cursor: pointer; padding: 0; flex-shrink: 0; }
+  .scard-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
+  .badge { font-size: 10px; padding: 2px 7px; border-radius: 20px; font-weight: 600; }
+  .b-free { background: #dcfce7; color: #14532d; }
+  .b-public { background: #dbeafe; color: #1e3a8a; }
+  .b-paid { background: #fef9c3; color: #713f12; }
+  .b-type { background: var(--gray-light); color: var(--gray-text); }
+  .scard-detail { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--gray-text); }
+  .scard-detail span { display: flex; align-items: center; gap: 4px; }
+  .scard-actions { display: flex; gap: 6px; margin-top: 7px; }
+  .btn-dir { flex: 1; padding: 6px 0; border-radius: 7px; border: 1.5px solid var(--blue); background: var(--blue); color: white; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; transition: background .15s; }
+  .btn-dir:hover { background: #1d4ed8; }
+  .btn-save { padding: 6px 10px; border-radius: 7px; border: 1.5px solid var(--gray-border); background: white; color: var(--gray-text); font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all .15s; }
+  .btn-save:hover { border-color: var(--amber); color: var(--amber); }
+  .btn-save.saved { border-color: var(--amber); background: var(--amber-light); color: var(--amber); }
+  .btn-unsave { padding: 6px 10px; border-radius: 7px; border: 1.5px solid var(--red); background: #fef2f2; color: var(--red); font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+
+  /* ── COORD BAR ── */
+  #coords { padding: 5px 14px; font-size: 10px; color: #94a3b8; background: var(--navy); display: flex; gap: 14px; flex-shrink: 0; }
+
+  /* ── POPUP TWEAKS ── */
+  .leaflet-popup-content { font-size: 13px; min-width: 170px; }
+  .popup-title { font-weight: 700; color: var(--navy); margin-bottom: 4px; }
+  .popup-row { font-size: 11px; color: var(--gray-text); margin-bottom: 2px; display: flex; gap: 5px; }
+  .popup-dir { display: inline-block; margin-top: 7px; padding: 5px 12px; background: var(--blue); color: white; border-radius: 6px; font-size: 11px; font-weight: 600; text-decoration: none; }
+  .popup-dir:hover { background: #1d4ed8; }
+
+  @keyframes spin { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+  .spin { display: inline-block; animation: spin 1s linear infinite; }
+
+  @media (max-width: 600px) {
+    #sidebar { width: 100%; max-height: 240px; border-left: none; border-top: 1px solid var(--gray-border); }
+    #main { flex-direction: column; }
+    #map { flex: 1; min-height: 0; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- TOPBAR -->
+  <div id="topbar">
+    <div id="topbar-row1">
+      <div id="logo">P</div>
+      <div id="app-title">Parking Radar</div>
+      <button id="scan-btn" onclick="startScan()">&#9906; Scan</button>
+    </div>
+    <div id="topbar-row2">
+      <div id="addr-wrap">
+        <input id="addr-input" type="text" placeholder="Search address (or leave empty for GPS)..." oninput="onAddrInput()"/>
+        <button id="addr-clear" onclick="clearAddr()">&#x2715;</button>
+      </div>
+      <select id="filter-sel" onchange="applyFilter()">
+        <option value="all">All parking</option>
+        <option value="free">Free only</option>
+        <option value="public">Public / low-cost</option>
+        <option value="paid">Paid only</option>
+      </select>
+      <div class="dist-chips">
+        <button class="chip active" onclick="setDist(500,this)">500 m</button>
+        <button class="chip" onclick="setDist(1000,this)">1 km</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATUS -->
+  <div id="status-bar">
+    <div id="sdot"></div>
+    <span id="stxt">Enter an address or tap Scan to use GPS &mdash; finds all public parking nearby</span>
+  </div>
+
+  <!-- MAIN -->
+  <div id="main">
+    <div id="map"></div>
+
+    <!-- SIDEBAR -->
+    <div id="sidebar">
+      <div id="sb-tabs">
+        <div class="sb-tab active" onclick="showTab('spots',this)">&#128205; Spots <span id="scount"></span></div>
+        <div class="sb-tab" onclick="showTab('saved',this)">&#11088; Saved <span id="saved-count"></span></div>
+      </div>
+      <div id="legend">
+        <span class="leg"><span class="leg-dot" style="background:var(--green)"></span>Free</span>
+        <span class="leg"><span class="leg-dot" style="background:var(--blue)"></span>Public</span>
+        <span class="leg"><span class="leg-dot" style="background:var(--amber)"></span>Paid</span>
+      </div>
+      <div id="spot-list">
+        <div id="empty-state">
+          <span class="e-icon">&#128663;</span>
+          Tap <strong>Scan</strong> to detect<br>public parking nearby.
+        </div>
+      </div>
+      <div id="saved-list" style="display:none">
+        <div id="empty-saved">
+          <span class="e-icon">&#11088;</span>
+          No saved spots yet.<br>Tap &#11088; on any parking card.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COORD BAR -->
+  <div id="coords">
+    <span id="clat">Lat: &mdash;</span>
+    <span id="clng">Lng: &mdash;</span>
+    <span id="cacc">Accuracy: &mdash;</span>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ── STATE ─────────────────────────────────────────────────────────────────
+let map, userMarker, radiusCircle, allSpots = [], markers = [], activeCard = null;
+let userPos = null, scanRadius = 500, currentTab = 'spots';
+let savedSpots = JSON.parse(localStorage.getItem('parkingRadar_saved') || '[]');
+
+// ── UTILS ──────────────────────────────────────────────────────────────────
+function haversine(a,b,c,d){
+  const R=6371e3,p1=a*Math.PI/180,p2=c*Math.PI/180,dp=(c-a)*Math.PI/180,dl=(d-b)*Math.PI/180;
+  const x=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+function fmtDist(m){ return m<1000 ? Math.round(m)+' m' : (m/1000).toFixed(1)+' km'; }
+function catOrder(c){ return c==='free'?0:c==='public'?1:2; }
+function catColor(c){ return c==='free'?'#16A34A':c==='public'?'#2563EB':'#D97706'; }
+function catBadge(c){ return c==='free'?'<span class="badge b-free">Free</span>':c==='public'?'<span class="badge b-public">Public</span>':'<span class="badge b-paid">Paid</span>'; }
+
+function classify(tags){
+  const fee=(tags.fee||'').toLowerCase(), access=(tags.access||'').toLowerCase(), charge=tags.charge||'';
+  if(fee==='no'||access==='free') return 'free';
+  if(fee==='yes'||charge||access==='customers'||access==='private'||access==='permit') return 'paid';
+  return 'public';
+}
+
+function getLabel(tags){
+  if(tags.name) return tags.name;
+  const p=tags.parking;
+  return p==='multi-storey'?'Parking Garage':p==='underground'?'Underground Parking':
+         p==='surface'?'Surface Lot':p==='street_side'?'Street Parking':
+         p==='rooftop'?'Rooftop Parking':'Parking Area';
+}
+
+function getParkingType(tags){
+  const p=tags.parking;
+  return p==='multi-storey'?'Multi-storey garage':p==='underground'?'Underground':
+         p==='surface'?'Surface lot':p==='street_side'?'Street-side':
+         p==='rooftop'?'Rooftop':'Parking area';
+}
+
+function getHours(tags){
+  const oh = tags.opening_hours || tags['opening_hours:parking'] || '';
+  if(!oh) return 'Hours unknown';
+  if(oh==='24/7') return 'Open 24/7';
+  return oh.length > 30 ? oh.substring(0,30)+'…' : oh;
+}
+
+function getCapacity(tags){
+  return tags.capacity ? tags.capacity+' spaces' : 'Unknown capacity';
+}
+
+function isSaved(spot){
+  return savedSpots.some(s => Math.abs(s.lat-spot.lat)<0.00001 && Math.abs(s.lng-spot.lng)<0.00001);
+}
+
+function savePersist(){ localStorage.setItem('parkingRadar_saved', JSON.stringify(savedSpots)); }
+
+function setStatus(msg, s){
+  document.getElementById('stxt').textContent = msg;
+  const d = document.getElementById('sdot');
+  d.className = s==='ok'?'g':s==='loading'?'a':s==='error'?'r':'';
+}
+
+// ── TABS ──────────────────────────────────────────────────────────────────
+function showTab(tab, el){
+  currentTab = tab;
+  document.querySelectorAll('.sb-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('spot-list').style.display  = tab==='spots'?'':'none';
+  document.getElementById('saved-list').style.display = tab==='saved'?'':'none';
+  if(tab==='saved') renderSaved();
+}
+
+// ── DIST / FILTER ─────────────────────────────────────────────────────────
+function setDist(d, el){
+  scanRadius = d;
+  document.querySelectorAll('.dist-chips .chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  if(userPos && radiusCircle){ radiusCircle.setRadius(d); map.fitBounds(radiusCircle.getBounds(),{padding:[20,20]}); }
+  if(allSpots.length) applyFilter();
+}
+
+// ── ADDRESS INPUT ─────────────────────────────────────────────────────────
+function onAddrInput(){
+  const v = document.getElementById('addr-input').value;
+  document.getElementById('addr-clear').style.display = v ? 'block' : 'none';
+}
+function clearAddr(){
+  document.getElementById('addr-input').value = '';
+  document.getElementById('addr-clear').style.display = 'none';
+}
+
+// ── MAP INIT ──────────────────────────────────────────────────────────────
+function initMap(lat, lng){
+  if(!map){
+    map = L.map('map',{zoomControl:true,attributionControl:false}).setView([lat,lng],15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+    L.control.attribution({prefix:'&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>'}).addTo(map);
+  } else { map.setView([lat,lng],15); }
+}
+
+function placeUserMarker(lat, lng){
+  if(userMarker) map.removeLayer(userMarker);
+  const icon = L.divIcon({html:`<div style="width:16px;height:16px;border-radius:50%;background:#2563EB;border:3px solid white;box-shadow:0 0 0 4px rgba(37,99,235,.25)"></div>`,className:'',iconSize:[16,16],iconAnchor:[8,8]});
+  userMarker = L.marker([lat,lng],{icon,zIndexOffset:1000}).addTo(map).bindTooltip('You are here',{permanent:false,direction:'top'});
+}
+
+function placeRadius(lat, lng){
+  if(radiusCircle) map.removeLayer(radiusCircle);
+  radiusCircle = L.circle([lat,lng],{radius:scanRadius,color:'#2563EB',weight:1.5,fillColor:'#2563EB',fillOpacity:0.05}).addTo(map);
+  map.fitBounds(radiusCircle.getBounds(),{padding:[24,24]});
+}
+
+// ── PIN ICON ──────────────────────────────────────────────────────────────
+function pinIcon(cat, i){
+  const bg = catColor(cat);
+  return L.divIcon({
+    html:`<div style="width:30px;height:30px;border-radius:50%;background:${bg};border:2.5px solid white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:white;box-shadow:0 2px 6px rgba(0,0,0,.25);position:relative">P<span style="position:absolute;top:-7px;right:-6px;background:${bg};border:1.5px solid white;border-radius:8px;font-size:9px;padding:0 3px;color:white;font-weight:700">${i+1}</span></div>`,
+    className:'', iconSize:[30,30], iconAnchor:[15,15]
+  });
+}
+
+// ── POPUP ─────────────────────────────────────────────────────────────────
+function buildPopup(spot){
+  const dirUrl = `https://www.google.com/maps/dir/?api=1&destination=${spot.lat},${spot.lng}`;
+  return `<div class="popup-title">${spot.label}</div>
+    <div class="popup-row">&#127963; ${getParkingType(spot.tags)}</div>
+    <div class="popup-row">&#128101; ${getCapacity(spot.tags)}</div>
+    <div class="popup-row">&#128336; ${getHours(spot.tags)}</div>
+    <div class="popup-row">&#128205; ${fmtDist(spot.dist)} away</div>
+    <a class="popup-dir" href="${dirUrl}" target="_blank">&#9654; Get Directions</a>`;
+}
+
+// ── RENDER SPOTS ──────────────────────────────────────────────────────────
+function applyFilter(){
+  const f = document.getElementById('filter-sel').value;
+  markers.forEach(m=>map.removeLayer(m)); markers=[];
+
+  const visible = allSpots
+    .filter(s=>s.dist<=scanRadius)
+    .filter(s=>f==='all'||(f==='public'&&(s.cat==='free'||s.cat==='public'))||s.cat===f)
+    .sort((a,b)=>catOrder(a.cat)-catOrder(b.cat)||a.dist-b.dist);
+
+  document.getElementById('scount').textContent = visible.length ? `(${visible.length})` : '';
+  const list = document.getElementById('spot-list');
+  list.innerHTML = '';
+
+  if(!visible.length){
+    list.innerHTML = '<div id="empty-state"><span class="e-icon">&#128683;</span>No spots match this filter.<br>Try changing the filter or radius.</div>';
+    return;
+  }
+
+  visible.forEach((spot,i)=>{
+    // marker
+    const m = L.marker([spot.lat,spot.lng],{icon:pinIcon(spot.cat,i)}).addTo(map);
+    m.bindPopup(buildPopup(spot),{maxWidth:220});
+    markers.push(m);
+
+    // card
+    const saved = isSaved(spot);
+    const card = document.createElement('div');
+    card.className = 'scard';
+    card.id = 'card'+i;
+    card.innerHTML = `
+      <div class="scard-top">
+        <div class="scard-num" style="background:${catColor(spot.cat)}">${i+1}</div>
+        <div class="scard-name">${spot.label}</div>
+      </div>
+      <div class="scard-meta">
+        ${catBadge(spot.cat)}
+        <span class="badge b-type">${getParkingType(spot.tags)}</span>
+      </div>
+      <div class="scard-detail">
+        <span>&#128101; ${getCapacity(spot.tags)}</span>
+        <span>&#128336; ${getHours(spot.tags)}</span>
+        <span>&#128205; ${fmtDist(spot.dist)} away</span>
+      </div>
+      <div class="scard-actions">
+        <button class="btn-dir" onclick="getDirections(${spot.lat},${spot.lng},event)">&#9654; Directions</button>
+        <button class="btn-save ${saved?'saved':''}" id="savebtn${i}" onclick="toggleSave(${i},event)">${saved?'&#11088; Saved':'&#9734; Save'}</button>
+      </div>`;
+
+    card.addEventListener('click', ()=>{
+      if(activeCard) activeCard.classList.remove('active');
+      card.classList.add('active'); activeCard = card;
+      map.setView([spot.lat,spot.lng],17);
+      m.openPopup();
+    });
+    m.on('click',()=>{
+      if(activeCard) activeCard.classList.remove('active');
+      card.classList.add('active'); activeCard=card;
+      card.scrollIntoView({behavior:'smooth',block:'nearest'});
+      document.querySelectorAll('.sb-tab')[0].click();
+    });
+
+    list.appendChild(card);
+    spot._cardIndex = i;
+  });
+
+  // store visible for save toggling
+  window._visibleSpots = visible;
+}
+
+// ── DIRECTIONS ────────────────────────────────────────────────────────────
+function getDirections(lat,lng,e){
+  e.stopPropagation();
+  window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`,'_blank');
+}
+
+// ── SAVE / UNSAVE ─────────────────────────────────────────────────────────
+function toggleSave(i, e){
+  e.stopPropagation();
+  const spot = window._visibleSpots[i];
+  const btn = document.getElementById('savebtn'+i);
+  if(isSaved(spot)){
+    savedSpots = savedSpots.filter(s=>!(Math.abs(s.lat-spot.lat)<0.00001&&Math.abs(s.lng-spot.lng)<0.00001));
+    btn.className='btn-save'; btn.innerHTML='&#9734; Save';
+  } else {
+    savedSpots.push({lat:spot.lat,lng:spot.lng,label:spot.label,cat:spot.cat,tags:spot.tags,dist:spot.dist});
+    btn.className='btn-save saved'; btn.innerHTML='&#11088; Saved';
+  }
+  savePersist();
+  updateSavedCount();
+}
+
+function updateSavedCount(){
+  document.getElementById('saved-count').textContent = savedSpots.length ? `(${savedSpots.length})` : '';
+}
+
+// ── RENDER SAVED ──────────────────────────────────────────────────────────
+function renderSaved(){
+  const list = document.getElementById('saved-list');
+  list.innerHTML='';
+  updateSavedCount();
+  if(!savedSpots.length){
+    list.innerHTML='<div id="empty-saved"><span class="e-icon">&#11088;</span>No saved spots yet.<br>Tap &#9734; Save on any parking card.</div>';
+    return;
+  }
+  savedSpots.forEach((spot,i)=>{
+    const card = document.createElement('div');
+    card.className='scard';
+    card.innerHTML=`
+      <div class="scard-top">
+        <div class="scard-num" style="background:${catColor(spot.cat)}">&#11088;</div>
+        <div class="scard-name">${spot.label}</div>
+      </div>
+      <div class="scard-meta">
+        ${catBadge(spot.cat)}
+        <span class="badge b-type">${getParkingType(spot.tags)}</span>
+      </div>
+      <div class="scard-detail">
+        <span>&#128101; ${getCapacity(spot.tags)}</span>
+        <span>&#128336; ${getHours(spot.tags)}</span>
+      </div>
+      <div class="scard-actions">
+        <button class="btn-dir" onclick="window.open('https://www.google.com/maps/dir/?api=1&destination=${spot.lat},${spot.lng}','_blank');event.stopPropagation()">&#9654; Directions</button>
+        <button class="btn-unsave" onclick="removeSaved(${i},event)">&#128465; Remove</button>
+      </div>`;
+    if(map) card.addEventListener('click',()=>{ map.setView([spot.lat,spot.lng],17); showTab('spots',document.querySelectorAll('.sb-tab')[0]); });
+    list.appendChild(card);
+  });
+}
+
+function removeSaved(i,e){
+  e.stopPropagation();
+  savedSpots.splice(i,1);
+  savePersist();
+  renderSaved();
+}
+
+// ── FETCH PARKING ─────────────────────────────────────────────────────────
+async function fetchParking(lat, lng){
+  const q=`[out:json][timeout:25];(node["amenity"="parking"](around:1000,${lat},${lng});way["amenity"="parking"](around:1000,${lat},${lng}););out center;`;
+  const res=await fetch('https://overpass-api.de/api/interpreter?data='+encodeURIComponent(q));
+  if(!res.ok) throw new Error('Overpass error');
+  return res.json();
+}
+
+// ── GEOCODE ADDRESS ───────────────────────────────────────────────────────
+async function geocodeAddress(addr){
+  const url=`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addr)}&format=json&limit=1`;
+  const res=await fetch(url,{headers:{'Accept-Language':'en'}});
+  const data=await res.json();
+  if(!data.length) throw new Error('Address not found');
+  return {lat:parseFloat(data[0].lat), lng:parseFloat(data[0].lon), display:data[0].display_name};
+}
+
+// ── MAIN SCAN ─────────────────────────────────────────────────────────────
+async function startScan(){
+  const btn=document.getElementById('scan-btn');
+  btn.disabled=true; btn.innerHTML='<span class="spin">&#8635;</span> Scanning&hellip;';
+  const addrVal=document.getElementById('addr-input').value.trim();
+
+  if(addrVal){
+    // Address mode
+    setStatus('Geocoding address…','loading');
+    try {
+      const geo=await geocodeAddress(addrVal);
+      userPos=[geo.lat,geo.lng];
+      document.getElementById('clat').textContent='Lat: '+geo.lat.toFixed(5);
+      document.getElementById('clng').textContent='Lng: '+geo.lng.toFixed(5);
+      document.getElementById('cacc').textContent='Source: Address search';
+      setStatus('Address found \u2014 loading parking data\u2026','loading');
+      initMap(geo.lat,geo.lng); placeUserMarker(geo.lat,geo.lng); placeRadius(geo.lat,geo.lng);
+      await loadSpots(geo.lat,geo.lng);
+    } catch(e){
+      setStatus('Address not found. Try a more specific address.','error');
+    }
+  } else {
+    // GPS mode
+    if(!navigator.geolocation){ setStatus('GPS not supported in this browser.','error'); btn.disabled=false; btn.innerHTML='&#9906; Scan'; return; }
+    setStatus('Requesting GPS location\u2026','loading');
+    navigator.geolocation.getCurrentPosition(async pos=>{
+      const lat=pos.coords.latitude, lng=pos.coords.longitude, acc=Math.round(pos.coords.accuracy);
+      userPos=[lat,lng];
+      document.getElementById('clat').textContent='Lat: '+lat.toFixed(5);
+      document.getElementById('clng').textContent='Lng: '+lng.toFixed(5);
+      document.getElementById('cacc').textContent='Accuracy: \u00b1'+acc+' m';
+      setStatus('GPS locked \u2014 loading parking data\u2026','loading');
+      initMap(lat,lng); placeUserMarker(lat,lng); placeRadius(lat,lng);
+      await loadSpots(lat,lng);
+      btn.disabled=false; btn.innerHTML='&#9906; Rescan';
+    }, err=>{
+      const m={1:'Location permission denied. Allow access and retry.',2:'GPS unavailable \u2014 try outdoors.',3:'GPS timed out.'};
+      setStatus(m[err.code]||'GPS error.','error');
+      btn.disabled=false; btn.innerHTML='&#9906; Scan';
+    },{enableHighAccuracy:true,timeout:15000,maximumAge:0});
+    return;
+  }
+  btn.disabled=false; btn.innerHTML='&#9906; Rescan';
+}
+
+async function loadSpots(lat,lng){
+  try {
+    const data=await fetchParking(lat,lng);
+    allSpots=(data.elements||[]).map(el=>({
+      lat:el.lat||el.center?.lat, lng:el.lon||el.center?.lon,
+      tags:el.tags||{}, dist:haversine(lat,lng,el.lat||el.center?.lat,el.lon||el.center?.lon),
+      cat:classify(el.tags||{}), label:getLabel(el.tags||{})
+    })).filter(s=>s.lat&&s.lng&&s.dist<=1000);
+    applyFilter();
+    updateSavedCount();
+    const f=allSpots.filter(s=>s.cat==='free').length, p=allSpots.filter(s=>s.cat==='public').length, pd=allSpots.filter(s=>s.cat==='paid').length;
+    setStatus(`${allSpots.length} parking areas found \u2014 ${f} free \u00b7 ${p} public \u00b7 ${pd} paid \u2014 sorted cheapest first`,'ok');
+  } catch(e){
+    setStatus('Could not load parking data. Check your connection.','error');
+  }
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+updateSavedCount();
+</script>
+</body>
+</html>
